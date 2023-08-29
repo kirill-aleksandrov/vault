@@ -12,10 +12,16 @@ scenario "upgrade" {
     edition         = ["oss", "ent", "ent.fips1402", "ent.hsm", "ent.hsm.fips1402"]
     seal            = ["awskms", "shamir"]
 
-    # Packages are not offered for the oss, ent.fips1402, and ent.hsm.fips1402 editions
+    # Our local builder always creates bundles
     exclude {
-      edition       = ["oss", "ent.fips1402", "ent.hsm.fips1402"]
-      artifact_type = ["package"]
+      artifact_source = ["local"]
+      artifact_type   = ["package"]
+    }
+
+    # HSM and FIPS 140-2 are only supported on amd64
+    exclude {
+      arch    = ["arm64"]
+      edition = ["ent.fips1402", "ent.hsm", "ent.hsm.fips1402"]
     }
   }
 
@@ -28,37 +34,12 @@ scenario "upgrade" {
   ]
 
   locals {
-    backend_license_path = abspath(var.backend_license_path != null ? var.backend_license_path : joinpath(path.root, "./support/consul.hclic"))
-    backend_tag_key      = "VaultStorage"
-    build_tags = {
-      "oss"              = ["ui"]
-      "ent"              = ["ui", "enterprise", "ent"]
-      "ent.fips1402"     = ["ui", "enterprise", "cgo", "hsm", "fips", "fips_140_2", "ent.fips1402"]
-      "ent.hsm"          = ["ui", "enterprise", "cgo", "hsm", "venthsm"]
-      "ent.hsm.fips1402" = ["ui", "enterprise", "cgo", "hsm", "fips", "fips_140_2", "ent.hsm.fips1402"]
-    }
     bundle_path = matrix.artifact_source != "artifactory" ? abspath(var.vault_artifact_path) : null
-    distro_version = {
-      "rhel"   = var.rhel_distro_version
-      "ubuntu" = var.ubuntu_distro_version
-    }
     enos_provider = {
       rhel   = provider.enos.rhel
       ubuntu = provider.enos.ubuntu
     }
-    packages = ["jq"]
-    tags = merge({
-      "Project Name" : var.project_name
-      "Project" : "Enos",
-      "Environment" : "ci"
-    }, var.tags)
-    vault_license_path = abspath(var.vault_license_path != null ? var.vault_license_path : joinpath(path.root, "./support/vault.hclic"))
-    vault_install_dir_packages = {
-      rhel   = "/bin"
-      ubuntu = "/usr/bin"
-    }
-    vault_install_dir = matrix.artifact_type == "bundle" ? var.vault_install_dir : local.vault_install_dir_packages[matrix.distro]
-    vault_tag_key     = "Type" // enos_vault_start expects Type as the tag key
+    vault_install_dir = matrix.artifact_type == "bundle" ? var.vault_install_dir : global.vault_install_dir_packages[matrix.distro]
   }
 
   step "get_local_metadata" {
@@ -71,7 +52,7 @@ scenario "upgrade" {
     module = "build_${matrix.artifact_source}"
 
     variables {
-      build_tags           = var.vault_local_build_tags != null ? var.vault_local_build_tags : local.build_tags[matrix.edition]
+      build_tags           = var.vault_local_build_tags != null ? var.vault_local_build_tags : global.build_tags[matrix.edition]
       bundle_path          = local.bundle_path
       goarch               = matrix.arch
       goos                 = "linux"
@@ -96,7 +77,7 @@ scenario "upgrade" {
     module = module.create_vpc
 
     variables {
-      common_tags = local.tags
+      common_tags = global.tags
     }
   }
 
@@ -107,7 +88,7 @@ scenario "upgrade" {
     module    = module.read_license
 
     variables {
-      file_name = local.backend_license_path
+      file_name = global.backend_license_path
     }
   }
 
@@ -116,7 +97,7 @@ scenario "upgrade" {
     module    = module.read_license
 
     variables {
-      file_name = local.vault_license_path
+      file_name = global.vault_license_path
     }
   }
 
@@ -129,10 +110,10 @@ scenario "upgrade" {
     }
 
     variables {
-      ami_id                = step.ec2_info.ami_ids[matrix.arch][matrix.distro][local.distro_version[matrix.distro]]
+      ami_id                = step.ec2_info.ami_ids[matrix.arch][matrix.distro][global.distro_version[matrix.distro]]
       awskms_unseal_key_arn = step.create_vpc.kms_key_arn
-      cluster_tag_key       = local.vault_tag_key
-      common_tags           = local.tags
+      cluster_tag_key       = global.vault_tag_key
+      common_tags           = global.tags
       vpc_id                = step.create_vpc.vpc_id
     }
   }
@@ -148,8 +129,8 @@ scenario "upgrade" {
     variables {
       ami_id                = step.ec2_info.ami_ids["arm64"]["ubuntu"]["22.04"]
       awskms_unseal_key_arn = step.create_vpc.kms_key_arn
-      cluster_tag_key       = local.backend_tag_key
-      common_tags           = local.tags
+      cluster_tag_key       = global.backend_tag_key
+      common_tags           = global.tags
       vpc_id                = step.create_vpc.vpc_id
     }
   }
@@ -166,7 +147,7 @@ scenario "upgrade" {
 
     variables {
       cluster_name    = step.create_vault_cluster_backend_targets.cluster_name
-      cluster_tag_key = local.backend_tag_key
+      cluster_tag_key = global.backend_tag_key
       license         = (matrix.backend == "consul" && var.backend_edition == "ent") ? step.read_backend_license.license : null
       release = {
         edition = var.backend_edition
@@ -191,7 +172,7 @@ scenario "upgrade" {
     variables {
       awskms_unseal_key_arn   = step.create_vpc.kms_key_arn
       backend_cluster_name    = step.create_vault_cluster_backend_targets.cluster_name
-      backend_cluster_tag_key = local.backend_tag_key
+      backend_cluster_tag_key = global.backend_tag_key
       consul_license          = (matrix.backend == "consul" && var.backend_edition == "ent") ? step.read_backend_license.license : null
       cluster_name            = step.create_vault_cluster_targets.cluster_name
       consul_release = matrix.backend == "consul" ? {
@@ -201,7 +182,7 @@ scenario "upgrade" {
       enable_file_audit_device = var.vault_enable_file_audit_device
       install_dir              = local.vault_install_dir
       license                  = matrix.edition != "oss" ? step.read_vault_license.license : null
-      packages                 = local.packages
+      packages                 = global.packages
       release                  = var.vault_upgrade_initial_release
       storage_backend          = matrix.backend
       target_hosts             = step.create_vault_cluster_targets.hosts

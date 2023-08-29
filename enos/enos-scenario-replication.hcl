@@ -17,16 +17,16 @@ scenario "replication" {
     secondary_backend = ["raft", "consul"]
     secondary_seal    = ["awskms", "shamir"]
 
-    # Packages are not offered for the   oss, ent.fips1402, and ent.hsm.fips1402 editions
-    exclude {
-      edition       = ["ent.fips1402", "ent.hsm.fips1402"]
-      artifact_type = ["package"]
-    }
-
     # Our local builder always creates bundles
     exclude {
       artifact_source = ["local"]
       artifact_type   = ["package"]
+    }
+
+    # HSM and FIPS 140-2 are only supported on amd64
+    exclude {
+      arch    = ["arm64"]
+      edition = ["ent.fips1402", "ent.hsm", "ent.hsm.fips1402"]
     }
   }
 
@@ -39,44 +39,19 @@ scenario "replication" {
   ]
 
   locals {
-    # The path to the backend license file (Consul Enterprise)
-    backend_license_path = abspath(var.backend_license_path != null ? var.backend_license_path : joinpath(path.root, "./support/consul.hclic"))
-    backend_tag_key      = "VaultStorage"
-    build_tags = {
-      "ent"              = ["ui", "enterprise", "ent"]
-      "ent.fips1402"     = ["ui", "enterprise", "cgo", "hsm", "fips", "fips_140_2", "ent.fips1402"]
-      "ent.hsm"          = ["ui", "enterprise", "cgo", "hsm", "venthsm"]
-      "ent.hsm.fips1402" = ["ui", "enterprise", "cgo", "hsm", "fips", "fips_140_2", "ent.hsm.fips1402"]
-    }
-    distro_version = {
-      "rhel"   = var.rhel_distro_version
-      "ubuntu" = var.ubuntu_distro_version
-    }
     bundle_path = matrix.artifact_source != "artifactory" ? abspath(var.vault_artifact_path) : null
     enos_provider = {
       rhel   = provider.enos.rhel
       ubuntu = provider.enos.ubuntu
     }
-    packages = ["jq"]
-    tags = merge({
-      "Project Name" : var.project_name
-      "Project" : "Enos",
-      "Environment" : "ci"
-    }, var.tags)
-    vault_license_path = abspath(var.vault_license_path != null ? var.vault_license_path : joinpath(path.root, "./support/vault.hclic"))
-    vault_install_dir_packages = {
-      rhel   = "/bin"
-      ubuntu = "/usr/bin"
-    }
-    vault_install_dir = matrix.artifact_type == "bundle" ? var.vault_install_dir : local.vault_install_dir_packages[matrix.distro]
-    vault_tag_key     = "Type" // enos_vault_start expects Type as the tag key
+    vault_install_dir = matrix.artifact_type == "bundle" ? var.vault_install_dir : global.vault_install_dir_packages[matrix.distro]
   }
 
   step "build_vault" {
     module = "build_${matrix.artifact_source}"
 
     variables {
-      build_tags           = var.vault_local_build_tags != null ? var.vault_local_build_tags : local.build_tags[matrix.edition]
+      build_tags           = var.vault_local_build_tags != null ? var.vault_local_build_tags : global.build_tags[matrix.edition]
       bundle_path          = local.bundle_path
       goarch               = matrix.arch
       goos                 = "linux"
@@ -101,7 +76,7 @@ scenario "replication" {
     module = module.create_vpc
 
     variables {
-      common_tags = local.tags
+      common_tags = global.tags
     }
   }
 
@@ -112,7 +87,7 @@ scenario "replication" {
     module    = module.read_license
 
     variables {
-      file_name = local.backend_license_path
+      file_name = global.backend_license_path
     }
   }
 
@@ -136,10 +111,10 @@ scenario "replication" {
     }
 
     variables {
-      ami_id                = step.ec2_info.ami_ids[matrix.arch][matrix.distro][local.distro_version[matrix.distro]]
+      ami_id                = step.ec2_info.ami_ids[matrix.arch][matrix.distro][global.distro_version[matrix.distro]]
       awskms_unseal_key_arn = step.create_vpc.kms_key_arn
-      cluster_tag_key       = local.vault_tag_key
-      common_tags           = local.tags
+      cluster_tag_key       = global.vault_tag_key
+      common_tags           = global.tags
       vpc_id                = step.create_vpc.vpc_id
     }
   }
@@ -157,8 +132,8 @@ scenario "replication" {
     variables {
       ami_id                = step.ec2_info.ami_ids["arm64"]["ubuntu"]["22.04"]
       awskms_unseal_key_arn = step.create_vpc.kms_key_arn
-      cluster_tag_key       = local.backend_tag_key
-      common_tags           = local.tags
+      cluster_tag_key       = global.backend_tag_key
+      common_tags           = global.tags
       vpc_id                = step.create_vpc.vpc_id
     }
   }
@@ -175,11 +150,11 @@ scenario "replication" {
     }
 
     variables {
-      ami_id                = step.ec2_info.ami_ids[matrix.arch][matrix.distro][local.distro_version[matrix.distro]]
+      ami_id                = step.ec2_info.ami_ids[matrix.arch][matrix.distro][global.distro_version[matrix.distro]]
       awskms_unseal_key_arn = step.create_vpc.kms_key_arn
       cluster_name          = step.create_primary_cluster_targets.cluster_name
-      cluster_tag_key       = local.vault_tag_key
-      common_tags           = local.tags
+      cluster_tag_key       = global.vault_tag_key
+      common_tags           = global.tags
       vpc_id                = step.create_vpc.vpc_id
     }
   }
@@ -193,10 +168,10 @@ scenario "replication" {
     }
 
     variables {
-      ami_id                = step.ec2_info.ami_ids[matrix.arch][matrix.distro][local.distro_version[matrix.distro]]
+      ami_id                = step.ec2_info.ami_ids[matrix.arch][matrix.distro][global.distro_version[matrix.distro]]
       awskms_unseal_key_arn = step.create_vpc.kms_key_arn
-      cluster_tag_key       = local.vault_tag_key
-      common_tags           = local.tags
+      cluster_tag_key       = global.vault_tag_key
+      common_tags           = global.tags
       vpc_id                = step.create_vpc.vpc_id
     }
   }
@@ -212,8 +187,8 @@ scenario "replication" {
     variables {
       ami_id                = step.ec2_info.ami_ids["arm64"]["ubuntu"]["22.04"]
       awskms_unseal_key_arn = step.create_vpc.kms_key_arn
-      cluster_tag_key       = local.backend_tag_key
-      common_tags           = local.tags
+      cluster_tag_key       = global.backend_tag_key
+      common_tags           = global.tags
       vpc_id                = step.create_vpc.vpc_id
     }
   }
@@ -230,7 +205,7 @@ scenario "replication" {
 
     variables {
       cluster_name    = step.create_primary_cluster_backend_targets.cluster_name
-      cluster_tag_key = local.backend_tag_key
+      cluster_tag_key = global.backend_tag_key
       license         = (matrix.primary_backend == "consul" && var.backend_edition == "ent") ? step.read_backend_license.license : null
       release = {
         edition = var.backend_edition
@@ -256,7 +231,7 @@ scenario "replication" {
       artifactory_release     = matrix.artifact_source == "artifactory" ? step.build_vault.vault_artifactory_release : null
       awskms_unseal_key_arn   = step.create_vpc.kms_key_arn
       backend_cluster_name    = step.create_primary_cluster_backend_targets.cluster_name
-      backend_cluster_tag_key = local.backend_tag_key
+      backend_cluster_tag_key = global.backend_tag_key
       consul_license          = (matrix.primary_backend == "consul" && var.backend_edition == "ent") ? step.read_backend_license.license : null
       cluster_name            = step.create_primary_cluster_targets.cluster_name
       consul_release = matrix.primary_backend == "consul" ? {
@@ -267,7 +242,7 @@ scenario "replication" {
       install_dir              = local.vault_install_dir
       license                  = matrix.edition != "oss" ? step.read_vault_license.license : null
       local_artifact_path      = local.bundle_path
-      packages                 = local.packages
+      packages                 = global.packages
       storage_backend          = matrix.primary_backend
       target_hosts             = step.create_primary_cluster_targets.hosts
       unseal_method            = matrix.primary_seal
@@ -286,7 +261,7 @@ scenario "replication" {
 
     variables {
       cluster_name    = step.create_secondary_cluster_backend_targets.cluster_name
-      cluster_tag_key = local.backend_tag_key
+      cluster_tag_key = global.backend_tag_key
       license         = (matrix.secondary_backend == "consul" && var.backend_edition == "ent") ? step.read_backend_license.license : null
       release = {
         edition = var.backend_edition
@@ -312,7 +287,7 @@ scenario "replication" {
       artifactory_release     = matrix.artifact_source == "artifactory" ? step.build_vault.vault_artifactory_release : null
       awskms_unseal_key_arn   = step.create_vpc.kms_key_arn
       backend_cluster_name    = step.create_secondary_cluster_backend_targets.cluster_name
-      backend_cluster_tag_key = local.backend_tag_key
+      backend_cluster_tag_key = global.backend_tag_key
       consul_license          = (matrix.secondary_backend == "consul" && var.backend_edition == "ent") ? step.read_backend_license.license : null
       cluster_name            = step.create_secondary_cluster_targets.cluster_name
       consul_release = matrix.secondary_backend == "consul" ? {
@@ -323,7 +298,7 @@ scenario "replication" {
       install_dir              = local.vault_install_dir
       license                  = matrix.edition != "oss" ? step.read_vault_license.license : null
       local_artifact_path      = local.bundle_path
-      packages                 = local.packages
+      packages                 = global.packages
       storage_backend          = matrix.secondary_backend
       target_hosts             = step.create_secondary_cluster_targets.hosts
       unseal_method            = matrix.secondary_seal
@@ -553,7 +528,7 @@ scenario "replication" {
       artifactory_release     = matrix.artifact_source == "artifactory" ? step.build_vault.vault_artifactory_release : null
       awskms_unseal_key_arn   = step.create_vpc.kms_key_arn
       backend_cluster_name    = step.create_primary_cluster_backend_targets.cluster_name
-      backend_cluster_tag_key = local.backend_tag_key
+      backend_cluster_tag_key = global.backend_tag_key
       cluster_name            = step.create_primary_cluster_targets.cluster_name
       consul_license          = (matrix.primary_backend == "consul" && var.backend_edition == "ent") ? step.read_backend_license.license : null
       consul_release = matrix.primary_backend == "consul" ? {
@@ -565,7 +540,7 @@ scenario "replication" {
       install_dir         = local.vault_install_dir
       license             = matrix.edition != "oss" ? step.read_vault_license.license : null
       local_artifact_path = local.bundle_path
-      packages            = local.packages
+      packages            = global.packages
       root_token          = step.create_primary_cluster.root_token
       shamir_unseal_keys  = matrix.primary_seal == "shamir" ? step.create_primary_cluster.unseal_keys_hex : null
       storage_backend     = matrix.primary_backend
