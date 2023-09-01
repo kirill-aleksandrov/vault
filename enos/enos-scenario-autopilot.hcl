@@ -32,11 +32,12 @@ scenario "autopilot" {
   ]
 
   locals {
-    bundle_path = matrix.artifact_source != "artifactory" ? abspath(var.vault_artifact_path) : null
+    artifact_path = matrix.artifact_source != "artifactory" ? abspath(var.vault_artifact_path) : null
     enos_provider = {
       rhel   = provider.enos.rhel
       ubuntu = provider.enos.ubuntu
     }
+    manage_service    = matrix.artifact_type == "bundle"
     vault_install_dir = matrix.artifact_type == "bundle" ? var.vault_install_dir : global.vault_install_dir_packages[matrix.distro]
   }
 
@@ -45,7 +46,7 @@ scenario "autopilot" {
 
     variables {
       build_tags           = var.vault_local_build_tags != null ? var.vault_local_build_tags : global.build_tags[matrix.edition]
-      bundle_path          = local.bundle_path
+      artifact_path        = local.artifact_path
       goarch               = matrix.arch
       goos                 = "linux"
       artifactory_host     = matrix.artifact_source == "artifactory" ? var.artifactory_host : null
@@ -213,7 +214,8 @@ scenario "autopilot" {
       initialize_cluster          = false
       install_dir                 = local.vault_install_dir
       license                     = matrix.edition != "oss" ? step.read_license.license : null
-      local_artifact_path         = local.bundle_path
+      local_artifact_path         = local.artifact_path
+      manage_service              = local.manage_service
       packages                    = global.packages
       root_token                  = step.create_vault_cluster.root_token
       shamir_unseal_keys          = matrix.seal == "shamir" ? step.create_vault_cluster.unseal_keys_hex : null

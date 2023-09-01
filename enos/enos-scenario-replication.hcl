@@ -39,11 +39,12 @@ scenario "replication" {
   ]
 
   locals {
-    bundle_path = matrix.artifact_source != "artifactory" ? abspath(var.vault_artifact_path) : null
+    artifact_path = matrix.artifact_source != "artifactory" ? abspath(var.vault_artifact_path) : null
     enos_provider = {
       rhel   = provider.enos.rhel
       ubuntu = provider.enos.ubuntu
     }
+    manage_service    = matrix.artifact_type == "bundle"
     vault_install_dir = matrix.artifact_type == "bundle" ? var.vault_install_dir : global.vault_install_dir_packages[matrix.distro]
   }
 
@@ -52,7 +53,7 @@ scenario "replication" {
 
     variables {
       build_tags           = var.vault_local_build_tags != null ? var.vault_local_build_tags : global.build_tags[matrix.edition]
-      bundle_path          = local.bundle_path
+      artifact_path        = local.artifact_path
       goarch               = matrix.arch
       goos                 = "linux"
       artifactory_host     = matrix.artifact_source == "artifactory" ? var.artifactory_host : null
@@ -241,7 +242,8 @@ scenario "replication" {
       enable_file_audit_device = var.vault_enable_file_audit_device
       install_dir              = local.vault_install_dir
       license                  = matrix.edition != "oss" ? step.read_vault_license.license : null
-      local_artifact_path      = local.bundle_path
+      local_artifact_path      = local.artifact_path
+      manage_service           = local.manage_service
       packages                 = global.packages
       storage_backend          = matrix.primary_backend
       target_hosts             = step.create_primary_cluster_targets.hosts
@@ -297,7 +299,8 @@ scenario "replication" {
       enable_file_audit_device = var.vault_enable_file_audit_device
       install_dir              = local.vault_install_dir
       license                  = matrix.edition != "oss" ? step.read_vault_license.license : null
-      local_artifact_path      = local.bundle_path
+      local_artifact_path      = local.artifact_path
+      manage_service           = local.manage_service
       packages                 = global.packages
       storage_backend          = matrix.secondary_backend
       target_hosts             = step.create_secondary_cluster_targets.hosts
@@ -535,18 +538,20 @@ scenario "replication" {
         edition = var.backend_edition
         version = matrix.consul_version
       } : null
-      force_unseal        = matrix.primary_seal == "shamir"
-      initialize_cluster  = false
-      install_dir         = local.vault_install_dir
-      license             = matrix.edition != "oss" ? step.read_vault_license.license : null
-      local_artifact_path = local.bundle_path
-      packages            = global.packages
-      root_token          = step.create_primary_cluster.root_token
-      shamir_unseal_keys  = matrix.primary_seal == "shamir" ? step.create_primary_cluster.unseal_keys_hex : null
-      storage_backend     = matrix.primary_backend
-      storage_node_prefix = "newprimary_node"
-      target_hosts        = step.create_primary_cluster_additional_targets.hosts
-      unseal_method       = matrix.primary_seal
+      enable_file_audit_device = var.vault_enable_file_audit_device
+      force_unseal             = matrix.primary_seal == "shamir"
+      initialize_cluster       = false
+      install_dir              = local.vault_install_dir
+      license                  = matrix.edition != "oss" ? step.read_vault_license.license : null
+      local_artifact_path      = local.artifact_path
+      manage_service           = local.manage_service
+      packages                 = global.packages
+      root_token               = step.create_primary_cluster.root_token
+      shamir_unseal_keys       = matrix.primary_seal == "shamir" ? step.create_primary_cluster.unseal_keys_hex : null
+      storage_backend          = matrix.primary_backend
+      storage_node_prefix      = "newprimary_node"
+      target_hosts             = step.create_primary_cluster_additional_targets.hosts
+      unseal_method            = matrix.primary_seal
     }
   }
 
